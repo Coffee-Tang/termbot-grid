@@ -181,6 +181,7 @@ export class TerminalPane {
     input.placeholder = '输入命令...';
     input.addEventListener('keydown', e => {
       e.stopPropagation();
+      if (e.isComposing) return;
       if (e.key === 'Enter' && this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionId) {
         const text = input.value;
         if (text) {
@@ -228,6 +229,7 @@ export class TerminalPane {
     cText.addEventListener('click', e => e.stopPropagation());
     cText.addEventListener('keydown', e => {
       e.stopPropagation();
+      if (e.isComposing) return;
       if (e.key === 'Enter' && cText.value.trim()) {
         this._addCapsule(cText.value.trim());
         cText.value = '';
@@ -588,14 +590,25 @@ export class TerminalPane {
         this._sessions = msg.list;
         this._updateSessionSelect(msg.list);
         if (this.sessionId) {
-          // Update mode from session list data
           const info = msg.list.find(s => s.session_id === this.sessionId);
-          if (info && info.ai_mode) {
-            this.el.querySelector('.mode-select').value = info.ai_mode;
-            this._updateBadge(info.ai_mode);
+          if (!info) {
+            // Session was closed — clean up
+            this._showToast('Session 已关闭');
+            this.sessionId = null;
+            this.el.querySelector('.session-select').value = '';
+            this._setStatus('');
+            this._setTitle('');
+            this._updateBadge('');
+            document.dispatchEvent(new Event('pane-state-changed'));
+          } else {
+            // Update mode from session list data
+            if (info.ai_mode) {
+              this.el.querySelector('.mode-select').value = info.ai_mode;
+              this._updateBadge(info.ai_mode);
+            }
+            if (this.ws && this.ws.readyState === WebSocket.OPEN)
+              this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
           }
-          if (this.ws && this.ws.readyState === WebSocket.OPEN)
-            this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
         }
         break;
       case 'status':
@@ -697,6 +710,7 @@ export class TerminalPane {
     input.addEventListener('click', e => e.stopPropagation());
     input.addEventListener('keydown', e => {
       e.stopPropagation();
+      if (e.isComposing) return;
       if (e.key === 'Enter' && input.value.trim()) {
         this._doDownload(input.value.trim());
         dialog.remove();

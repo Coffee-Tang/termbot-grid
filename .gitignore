@@ -4,3 +4,4 @@ node_modules/
 firebase-debug.log
 termbot-grid-*.png
 test-results/
+dist/
