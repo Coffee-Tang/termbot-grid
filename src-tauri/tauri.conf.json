@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-tauri/refs/heads/main/crates/tauri-utils/schema.json",
+  "productName": "TermBot Grid",
+  "version": "0.1.0",
+  "identifier": "com.termbot.grid",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "TermBot Grid",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

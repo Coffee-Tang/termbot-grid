@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TermBot Grid</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="toolbar-left">
+      <button id="btn-servers" title="服务器管理">🖥 服务器</button>
+      <span id="server-status"></span>
+    </div>
+    <div class="toolbar-center">
+      <button class="layout-btn" data-layout="1x1">1</button>
+      <button class="layout-btn" data-layout="1x2">2</button>
+      <button class="layout-btn active" data-layout="2x2">4</button>
+      <button class="layout-btn" data-layout="2x3">6</button>
+      <button class="layout-btn" data-layout="3x3">9</button>
+    </div>
+    <div class="toolbar-right">
+      <span id="app-title">TermBot Grid</span>
+    </div>
+  </div>
+
+  <!-- Grid container -->
+  <div id="grid-container"></div>
+
+  <!-- Server management modal -->
+  <div id="server-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>服务器管理</h3>
+        <button class="modal-close" id="close-server-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="server-list"></div>
+        <div class="server-form">
+          <input type="text" id="srv-name" placeholder="名称 (如: Mac Mini)">
+          <input type="text" id="srv-host" placeholder="地址 (如: http://192.168.1.10:18080)">
+          <input type="text" id="srv-token" placeholder="Token">
+          <button id="btn-add-server">添加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
