@@ -132,3 +132,14 @@ setInterval(_saveState, 10000);
 
 // Save immediately when pane state changes (server/session switch)
 document.addEventListener('pane-state-changed', _saveState);
+
+// Check if a session is already used by another pane
+document.addEventListener('pane-check-session', (e) => {
+  const { sessionId, paneIndex } = e.detail;
+  for (const pane of _panes) {
+    if (pane.index !== paneIndex && pane.sessionId === sessionId) {
+      e.detail.allowed = false;
+      return;
+    }
+  }
+});

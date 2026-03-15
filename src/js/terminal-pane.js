@@ -189,7 +189,7 @@ export class TerminalPane {
         }
       }
     });
-    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('click', e => { e.stopPropagation(); this._onFocus(); });
     input.addEventListener('focus', e => e.stopPropagation());
     const sendBtn = _createEl('button', 'send-btn', '▶');
     sendBtn.addEventListener('click', e => {
@@ -349,6 +349,19 @@ export class TerminalPane {
   }
 
   _onSessionChange(sessionId) {
+    // Check if session is already used by another pane
+    if (sessionId) {
+      const evt = new CustomEvent('pane-check-session', {
+        detail: { sessionId, paneIndex: this.index, allowed: true },
+        bubbles: true,
+      });
+      document.dispatchEvent(evt);
+      if (!evt.detail.allowed) {
+        this.el.querySelector('.session-select').value = this.sessionId || '';
+        this._showToast('该 Session 已在其他窗格中使用');
+        return;
+      }
+    }
     this.disconnect();
     this.sessionId = sessionId || null;
     this._prevStripped = [];

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-tauri/refs/heads/main/crates/tauri-utils/schema.json",
   "productName": "iTermBotGrid",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "ai.cafesoft.itermbot.grid",
   "build": {
     "frontendDist": "../src"
@@ -10,7 +10,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "iTermBot Grid v0.1.0",
+        "title": "iTermBot Grid v0.2.0",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
