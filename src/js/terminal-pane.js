@@ -660,9 +660,9 @@ export class TerminalPane {
     if (scrollOffset === 0 && this._prevStripped.length > 0) return;
     if (scrollOffset > 0) {
       this.term.write('\x1b[' + this.term.rows + ';1H' + '\r\n'.repeat(scrollOffset));
-    } else if (scrollOffset === -1 && this._prevStripped.length > 0) {
-      this.term.write('\x1b[' + this.term.rows + ';1H' + '\r\n'.repeat(this.term.rows));
     }
+    // scrollOffset === -1: screen changed completely, don't push anything to scrollback.
+    // Avoids duplicate content from false matches (separator lines, repeated patterns).
     this._prevStripped = newStripped;
     this.term.write('\x1b[H\x1b[2J' + data.replace(/\n/g, '\r\n'));
     if (this.term.buffer.active.viewportY >= this.term.buffer.active.baseY) this.term.scrollToBottom();
