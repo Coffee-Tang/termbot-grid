@@ -71,6 +71,20 @@ btnAdd.addEventListener('click', () => {
   refreshServers();
 });
 
+// --- Screenshot ---
+document.getElementById('btn-screenshot').addEventListener('click', async () => {
+  try {
+    const canvas = await html2canvas(document.body, { backgroundColor: '#1e1e2e' });
+    const link = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    link.download = `termbot-grid-${ts}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    console.error('Screenshot failed:', err);
+  }
+});
+
 // --- Init ---
 loadServers();
 renderServerList();

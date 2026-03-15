@@ -129,3 +129,6 @@ function _loadState() {
 
 // Auto-save state periodically
 setInterval(_saveState, 10000);
+
+// Save immediately when pane state changes (server/session switch)
+document.addEventListener('pane-state-changed', _saveState);

@@ -63,6 +63,9 @@ export class TerminalPane {
     this._fullscreen = false;
     this._resizeObserver = null;
     this._pingInterval = null;
+    this._intentionalClose = false;
+    this._reconnectAttempts = 0;
+    this._reconnectTimer = null;
   }
 
   /** Create DOM elements and xterm instance */
@@ -99,7 +102,44 @@ export class TerminalPane {
     capsuleBtn.title = '闪念胶囊';
     capsuleBtn.addEventListener('click', e => { e.stopPropagation(); this._toggleCapsule(); });
 
-    header.append(statusDot, serverSel, sessionSel, modeSel, aiBadge, aiLogBtn, capsuleBtn, title);
+    // Disconnect button
+    const disconnBtn = _createEl('button', 'pane-header-btn btn-disconnect', '✕');
+    disconnBtn.title = '断开连接';
+    disconnBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      this.disconnect();
+      this.sessionId = null;
+      this.server = null;
+      this.el.querySelector('.server-select').value = '';
+      this.el.querySelector('.session-select').value = '';
+      this._setStatus('');
+      this._setTitle('');
+      this._updateBadge('');
+      this.term.clear();
+      document.dispatchEvent(new Event('pane-state-changed'));
+    });
+    // Upload button
+    const uploadBtn = _createEl('button', 'pane-header-btn', '⬆');
+    uploadBtn.title = '上传文件';
+    uploadBtn.addEventListener('click', e => { e.stopPropagation(); this._triggerUpload(); });
+    // Download button
+    const downloadBtn = _createEl('button', 'pane-header-btn', '⬇');
+    downloadBtn.title = '下载文件';
+    downloadBtn.addEventListener('click', e => { e.stopPropagation(); this._triggerDownload(); });
+    // Hidden file input for upload
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.className = 'pane-file-input';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', e => {
+      if (e.target.files.length && this.server && this.sessionId) {
+        this._uploadFiles(e.target.files);
+      }
+      e.target.value = '';
+    });
+
+    header.append(statusDot, serverSel, sessionSel, modeSel, aiBadge, aiLogBtn, capsuleBtn, uploadBtn, downloadBtn, disconnBtn, fileInput, title);
 
     // Terminal container
     const termContainer = _createEl('div', 'pane-terminal');
@@ -254,7 +294,10 @@ export class TerminalPane {
   setFocused(focused) {
     this._focused = focused;
     this.el.classList.toggle('focused', focused);
-    if (focused) this.term.focus();
+    if (focused) {
+      const input = this.el.querySelector('.pane-input');
+      if (input) input.focus();
+    }
   }
 
   _onFocus() {
@@ -267,10 +310,10 @@ export class TerminalPane {
       const w = container.clientWidth;
       const h = container.clientHeight;
       if (w < 10 || h < 10) return;
-      // Target ~80 columns. Monospace char width ≈ fontSize * 0.6
-      const targetCols = 80;
-      const idealSize = Math.floor(w / (targetCols * 0.602));
-      const fontSize = Math.max(8, Math.min(idealSize, 18));
+      // Ensure at least ~100 columns, font 8-13px
+      const minCols = 100;
+      const idealSize = Math.floor(w / (minCols * 0.602));
+      const fontSize = Math.max(8, Math.min(idealSize, 13));
       if (this.term.options.fontSize !== fontSize) {
         this.term.options.fontSize = fontSize;
       }
@@ -291,7 +334,7 @@ export class TerminalPane {
     this._updateSessionSelect([]);
     this._setStatus('');
     this._setTitle('');
-    if (!serverId) { this.server = null; return; }
+    if (!serverId) { this.server = null; document.dispatchEvent(new Event('pane-state-changed')); return; }
     const { getServer, fetchSessions } = await import('./server-manager.js');
     this.server = getServer(serverId);
     if (!this.server) return;
@@ -310,7 +353,16 @@ export class TerminalPane {
     this.sessionId = sessionId || null;
     this._prevStripped = [];
     this.term.clear();
-    if (this.sessionId && this.server) this.connect();
+    if (this.sessionId && this.server) {
+      // Apply mode from session list data immediately
+      const info = this._sessions.find(s => s.session_id === sessionId);
+      if (info && info.ai_mode) {
+        this.el.querySelector('.mode-select').value = info.ai_mode;
+        this._updateBadge(info.ai_mode);
+      }
+      this.connect();
+    }
+    document.dispatchEvent(new Event('pane-state-changed'));
   }
 
   _updateSessionSelect(sessions) {
@@ -318,6 +370,9 @@ export class TerminalPane {
     sel.textContent = '';
     sel.appendChild(_createOption('', '-- Session --'));
     for (const s of sessions) sel.appendChild(_createOption(s.session_id, s.alias || s.name || s.session_id.slice(0, 8)));
+    if (this.sessionId && sessions.find(s => s.session_id === this.sessionId)) {
+      sel.value = this.sessionId;
+    }
   }
 
   _setStatus(state) {
@@ -465,11 +520,19 @@ export class TerminalPane {
   connect() {
     if (!this.server || !this.sessionId) return;
     this.disconnect();
+    this._intentionalClose = false;
+    this._reconnectAttempts = 0;
+    this._doConnect();
+  }
+
+  _doConnect() {
+    if (!this.server || !this.sessionId) return;
     const url = wsUrl(this.server);
     this.ws = new WebSocket(url);
     this._setStatus('');
     this.ws.onopen = () => {
       this._setStatus('connected');
+      this._reconnectAttempts = 0;
       this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
       this._pingInterval = setInterval(() => {
         if (this.ws && this.ws.readyState === WebSocket.OPEN)
@@ -479,11 +542,26 @@ export class TerminalPane {
     this.ws.onmessage = (event) => {
       try { this._handleMessage(JSON.parse(event.data)); } catch {}
     };
-    this.ws.onclose = () => { this._setStatus('error'); clearInterval(this._pingInterval); };
+    this.ws.onclose = () => {
+      clearInterval(this._pingInterval);
+      if (this._intentionalClose) return;
+      this._setStatus('error');
+      this._scheduleReconnect();
+    };
     this.ws.onerror = () => { this._setStatus('error'); };
   }
 
+  _scheduleReconnect() {
+    if (this._intentionalClose || !this.server || !this.sessionId) return;
+    this._reconnectAttempts = (this._reconnectAttempts || 0) + 1;
+    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 30000);
+    this._setTitle(`重连中 (${this._reconnectAttempts})...`);
+    this._reconnectTimer = setTimeout(() => this._doConnect(), delay);
+  }
+
   disconnect() {
+    this._intentionalClose = true;
+    clearTimeout(this._reconnectTimer);
     if (this.ws) { this.ws.close(); this.ws = null; }
     clearInterval(this._pingInterval);
   }
@@ -496,30 +574,44 @@ export class TerminalPane {
       case 'sessions':
         this._sessions = msg.list;
         this._updateSessionSelect(msg.list);
-        if (this.sessionId && this.ws && this.ws.readyState === WebSocket.OPEN)
-          this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
+        if (this.sessionId) {
+          // Update mode from session list data
+          const info = msg.list.find(s => s.session_id === this.sessionId);
+          if (info && info.ai_mode) {
+            this.el.querySelector('.mode-select').value = info.ai_mode;
+            this._updateBadge(info.ai_mode);
+          }
+          if (this.ws && this.ws.readyState === WebSocket.OPEN)
+            this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
+        }
         break;
       case 'status':
+        console.log('[pane]', this.index, 'status msg:', msg, 'mySession:', this.sessionId);
         if (msg.session_id === this.sessionId) {
+          console.log('[pane]', this.index, 'setting mode to:', msg.mode);
           this.el.querySelector('.mode-select').value = msg.mode;
           this._updateBadge(msg.mode);
         }
         break;
       case 'ai_status':
-        this._addAiLogEntry(msg);
-        if (msg.status === 'thinking') {
-          this._updateBadge('thinking', msg.trigger);
-        } else if (msg.status === 'done') {
-          this._updateBadge(this.el.querySelector('.mode-select').value);
-          const actions = { wait: '观察中', input: '发送: ' + msg.value, key: '按键: ' + msg.value, notify: '通知人工' };
-          this._showToast('AI: ' + (actions[msg.action] || msg.action));
+        if (msg.session_id === this.sessionId) {
+          this._addAiLogEntry(msg);
+          if (msg.status === 'thinking') {
+            this._updateBadge('thinking', msg.trigger);
+          } else if (msg.status === 'done') {
+            this._updateBadge(this.el.querySelector('.mode-select').value);
+            const actions = { wait: '观察中', input: '发送: ' + msg.value, key: '按键: ' + msg.value, notify: '通知人工' };
+            this._showToast('AI: ' + (actions[msg.action] || msg.action));
+          }
         }
         break;
       case 'ai_action':
-        this._addAiLogEntry(msg);
-        if (msg.action !== 'wait') {
-          const texts = { input: '发送: ' + msg.value, key: '按键: ' + msg.value, notify: msg.value, cancelled: '取消: ' + msg.value };
-          this._showToast('AI ' + (texts[msg.action] || msg.action));
+        if (msg.session_id === this.sessionId) {
+          this._addAiLogEntry(msg);
+          if (msg.action !== 'wait') {
+            const texts = { input: '发送: ' + msg.value, key: '按键: ' + msg.value, notify: msg.value, cancelled: '取消: ' + msg.value };
+            this._showToast('AI ' + (texts[msg.action] || msg.action));
+          }
         }
         break;
       case 'idea_updated':
@@ -527,6 +619,9 @@ export class TerminalPane {
           this._capsules = msg.ideas || [];
           this._renderCapsules();
         }
+        break;
+      case 'ai_countdown':
+        if (msg.session_id === this.sessionId) this._showCountdown(msg);
         break;
       case 'pong':
         break;
@@ -545,6 +640,100 @@ export class TerminalPane {
     this._prevStripped = newStripped;
     this.term.write('\x1b[H\x1b[2J' + data.replace(/\n/g, '\r\n'));
     if (this.term.buffer.active.viewportY >= this.term.buffer.active.baseY) this.term.scrollToBottom();
+  }
+
+  // --- File upload/download ---
+  _triggerUpload() {
+    if (!this.server || !this.sessionId) return;
+    this.el.querySelector('.pane-file-input').click();
+  }
+
+  async _uploadFiles(files) {
+    const { httpBase } = await import('./server-manager.js');
+    const base = httpBase(this.server);
+    for (const file of files) {
+      const form = new FormData();
+      form.append('file', file);
+      this._showToast('上传中: ' + file.name);
+      try {
+        const resp = await fetch(`${base}/api/sessions/${this.sessionId}/upload?token=${this.server.token}`, {
+          method: 'POST', body: form,
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+          this._showToast('上传失败: ' + (err.detail || resp.statusText));
+          continue;
+        }
+        this._showToast('上传完成: ' + file.name);
+      } catch (e) {
+        this._showToast('上传失败: ' + e.message);
+      }
+    }
+  }
+
+  _triggerDownload() {
+    if (!this.server || !this.sessionId) return;
+    // Show inline input dialog in the pane
+    let dialog = this.el.querySelector('.download-dialog');
+    if (dialog) { dialog.remove(); return; }
+    dialog = _createEl('div', 'download-dialog');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'download-input';
+    input.placeholder = '输入文件路径...';
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter' && input.value.trim()) {
+        this._doDownload(input.value.trim());
+        dialog.remove();
+      } else if (e.key === 'Escape') {
+        dialog.remove();
+      }
+    });
+    const okBtn = _createEl('button', 'download-ok-btn', '下载');
+    okBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (input.value.trim()) {
+        this._doDownload(input.value.trim());
+        dialog.remove();
+      }
+    });
+    const cancelBtn = _createEl('button', 'download-cancel-btn', '取消');
+    cancelBtn.addEventListener('click', e => { e.stopPropagation(); dialog.remove(); });
+    dialog.append(input, okBtn, cancelBtn);
+    this.el.appendChild(dialog);
+    input.focus();
+  }
+
+  async _doDownload(path) {
+    const { httpBase } = await import('./server-manager.js');
+    const base = httpBase(this.server);
+    const url = `${base}/api/sessions/${this.sessionId}/download?path=${encodeURIComponent(path)}&token=${this.server.token}`;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    setTimeout(() => document.body.removeChild(iframe), 30000);
+    this._showToast('下载中: ' + path);
+  }
+
+  // --- AI Countdown ---
+  _showCountdown(msg) {
+    let el = this.el.querySelector('.pane-countdown');
+    if (msg.remaining <= 0) {
+      if (el) el.remove();
+      return;
+    }
+    if (!el) {
+      el = _createEl('div', 'pane-countdown');
+      this.el.appendChild(el);
+    }
+    const actionText = msg.action === 'input' ? msg.value : msg.action;
+    el.textContent = '';
+    const ring = _createEl('div', 'countdown-ring', String(msg.remaining));
+    const text = _createEl('div', 'countdown-text', actionText);
+    el.append(ring, text);
   }
 
   destroy() {

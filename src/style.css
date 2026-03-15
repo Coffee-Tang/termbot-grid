@@ -517,3 +517,119 @@ body {
   font-weight: 600;
 }
 #btn-add-server:hover { background: #74c7ec; }
+
+/* --- Screenshot button --- */
+#btn-screenshot {
+  background: none;
+  border: 1px solid #45475a;
+  color: #cdd6f4;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+#btn-screenshot:hover { background: #45475a; }
+#app-version { font-size: 10px; color: #f38ba8; margin-left: 4px; }
+
+/* --- Pane header buttons (upload/download) --- */
+.pane-header-btn {
+  background: none;
+  border: 1px solid #45475a;
+  color: #cdd6f4;
+  border-radius: 3px;
+  padding: 1px 5px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.pane-header-btn:hover { background: #45475a; }
+.btn-disconnect { color: #f38ba8; }
+.btn-disconnect:hover { background: #f38ba8; color: #11111b; }
+
+/* --- Download dialog --- */
+.download-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 960;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.download-input {
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  color: #cdd6f4;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  width: 200px;
+  outline: none;
+}
+.download-input:focus { border-color: #89b4fa; }
+.download-ok-btn, .download-cancel-btn {
+  background: #45475a;
+  border: none;
+  color: #cdd6f4;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.download-ok-btn:hover { background: #89b4fa; color: #11111b; }
+.download-cancel-btn:hover { background: #f38ba8; color: #11111b; }
+
+/* --- AI Countdown (per pane) --- */
+.pane-countdown {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(30, 30, 30, 0.92);
+  border: 1px solid #404040;
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  animation: countdown-in 0.3s ease;
+}
+@keyframes countdown-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.countdown-ring {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid #d29922;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #d29922;
+  font-family: monospace;
+  flex-shrink: 0;
+  animation: countdown-pulse 1s infinite;
+}
+@keyframes countdown-pulse {
+  0%, 100% { border-color: #d29922; color: #d29922; }
+  50% { border-color: #e5b84a; color: #e5b84a; }
+}
+.countdown-text {
+  color: #d4d4d4;
+  font-size: 12px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+}

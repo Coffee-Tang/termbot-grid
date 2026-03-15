@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-tauri/refs/heads/main/crates/tauri-utils/schema.json",
-  "productName": "TermBot Grid",
+  "productName": "iTermBotGrid",
   "version": "0.1.0",
-  "identifier": "com.termbot.grid",
+  "identifier": "ai.cafesoft.itermbot.grid",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "TermBot Grid",
+        "title": "iTermBot Grid v0.1.0",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -20,6 +20,17 @@
     ],
     "security": {
       "csp": null
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": "v1Compatible"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0MTFERENDNDY4NkJGMTgKUldRWXY0Wkd6TjBSbEMvNUdzRXRmQ1FvUkgwbWJ5WkZuT2hzSmkyZDFQSlF5bDNxV2hXOEN6emIK",
+      "endpoints": [
+        "https://github.com/Coffee-Tang/termbot-grid/releases/latest/download/latest.json"
+      ]
     }
   }
 }

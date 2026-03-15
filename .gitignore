@@ -1,3 +1,5 @@
 src-tauri/target/
 node_modules/
 .DS_Store
+firebase-debug.log
+termbot-grid-*.png

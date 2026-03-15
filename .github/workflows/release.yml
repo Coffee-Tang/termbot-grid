@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build aarch64
+        run: cd src-tauri && cargo tauri build --target aarch64-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: Build x86_64
+        run: cd src-tauri && cargo tauri build --target x86_64-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: Generate latest.json
+        run: |
+          AARCH64_SIG=$(cat src-tauri/target/aarch64-apple-darwin/release/bundle/macos/iTermBotGrid.app.tar.gz.sig)
+          X86_64_SIG=$(cat src-tauri/target/x86_64-apple-darwin/release/bundle/macos/iTermBotGrid.app.tar.gz.sig)
+          python3 -c "
+          import json, os
+          ref = os.environ['GITHUB_REF_NAME']
+          repo = os.environ['GITHUB_REPOSITORY']
+          ver = ref.lstrip('v')
+          data = {
+            'version': ver,
+            'pub_date': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+            'platforms': {
+              'darwin-aarch64': {
+                'signature': os.environ['AARCH64_SIG'],
+                'url': f'https://github.com/{repo}/releases/download/{ref}/iTermBotGrid.app.tar.gz'
+              },
+              'darwin-x86_64': {
+                'signature': os.environ['X86_64_SIG'],
+                'url': f'https://github.com/{repo}/releases/download/{ref}/iTermBotGrid_x86_64.app.tar.gz'
+              }
+            }
+          }
+          with open('latest.json', 'w') as f:
+            json.dump(data, f, indent=2)
+          "
+        env:
+          AARCH64_SIG: ${{ env.AARCH64_SIG }}
+          X86_64_SIG: ${{ env.X86_64_SIG }}
+
+      - name: Rename x86_64 artifacts
+        run: |
+          cp src-tauri/target/x86_64-apple-darwin/release/bundle/macos/iTermBotGrid.app.tar.gz iTermBotGrid_x86_64.app.tar.gz
+          cp src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg iTermBotGrid_x86_64.dmg 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/iTermBotGrid.app.tar.gz
+            iTermBotGrid_x86_64.app.tar.gz
+            iTermBotGrid_x86_64.dmg
+            latest.json
