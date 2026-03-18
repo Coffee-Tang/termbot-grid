@@ -58,6 +58,31 @@ modal.addEventListener('click', (e) => {
   if (e.target === modal) modal.classList.add('hidden');
 });
 
+// Auto-parse URL with token (e.g. http://host:port/ws?token=xxx)
+document.getElementById('srv-host').addEventListener('input', (e) => {
+  const val = e.target.value.trim();
+  if (!val.includes('token=')) return;
+  try {
+    // Normalize: ensure protocol so URL can parse
+    const normalized = /^(https?|wss?):\/\//.test(val) ? val : 'http://' + val;
+    const url = new URL(normalized);
+    const token = url.searchParams.get('token');
+    if (!token) return;
+    // Reconstruct clean host: protocol + host (use http for ws)
+    const proto = url.protocol.replace('wss', 'https').replace('ws', 'http');
+    const host = proto + '//' + url.host;
+    e.target.value = host;
+    document.getElementById('srv-token').value = token;
+    // Auto-fill name if empty
+    const nameInput = document.getElementById('srv-name');
+    if (!nameInput.value.trim()) {
+      nameInput.value = url.hostname;
+      nameInput.focus();
+      nameInput.select();
+    }
+  } catch {}
+});
+
 btnAdd.addEventListener('click', () => {
   const name = document.getElementById('srv-name').value.trim();
   const host = document.getElementById('srv-host').value.trim();

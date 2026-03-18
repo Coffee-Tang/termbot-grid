@@ -23,6 +23,10 @@
     }
   },
   "bundle": {
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
     "createUpdaterArtifacts": "v1Compatible"
   },
   "plugins": {

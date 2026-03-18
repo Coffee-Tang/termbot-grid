@@ -26,11 +26,29 @@ fi
 # Create dist directory
 mkdir -p "${DIST_DIR}"
 
-# Zip the .app bundle
+# Create install script
+cat > "${BUNDLE_DIR}/install.sh" << 'INSTALL'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP="${SCRIPT_DIR}/iTermBotGrid.app"
+if [ ! -d "$APP" ]; then
+  echo "ERROR: iTermBotGrid.app not found"
+  exit 1
+fi
+xattr -cr "$APP"
+cp -R "$APP" /Applications/
+echo "iTermBotGrid has been installed to /Applications/"
+echo "You can now open it from Launchpad or Applications folder."
+open /Applications/iTermBotGrid.app
+INSTALL
+chmod +x "${BUNDLE_DIR}/install.sh"
+
+# Zip the .app bundle with install script
 ZIP_NAME="${APP_NAME}_v${VERSION}_macos.zip"
 echo "==> Packaging ${ZIP_NAME}..."
 cd "${BUNDLE_DIR}"
-zip -r -q "${DIST_DIR}/${ZIP_NAME}" "${APP_NAME}.app"
+zip -r -q "${DIST_DIR}/${ZIP_NAME}" "${APP_NAME}.app" install.sh
+rm -f install.sh
 cd "${SCRIPT_DIR}"
 
 echo "==> Done: ${DIST_DIR}/${ZIP_NAME}"

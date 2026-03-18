@@ -7,32 +7,6 @@ function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trimEnd();
 }
 
-/**
- * Detect how many lines scrolled off the top.
- * Returns: number of lines scrolled (0 = no change, -1 = can't detect).
- */
-function detectScrollOffset(prev, next) {
-  if (prev.length === 0 || prev.length !== next.length) return -1;
-  let allSame = true;
-  for (let i = 0; i < prev.length; i++) {
-    if (prev[i] !== next[i]) { allSame = false; break; }
-  }
-  if (allSame) return 0;
-
-  const maxScroll = Math.min(prev.length - 2, 30);
-  for (let offset = 1; offset <= maxScroll; offset++) {
-    if (prev[offset] !== next[0]) continue;
-    const checkLen = prev.length - offset;
-    const strictLen = Math.max(checkLen - 2, 1);
-    let match = true;
-    for (let i = 0; i < strictLen; i++) {
-      if (prev[i + offset] !== next[i]) { match = false; break; }
-    }
-    if (match) return offset;
-  }
-  return -1;
-}
-
 function _createEl(tag, className, textContent) {
   const el = document.createElement(tag);
   if (className) el.className = className;
@@ -56,7 +30,9 @@ export class TerminalPane {
     this.term = null;
     this.fitAddon = null;
     this.el = null;
+    this._prevLines = [];
     this._prevStripped = [];
+    this._lastSbHeight = -1;
     this._sessions = [];
     this._capsules = [];
     this._focused = false;
@@ -66,6 +42,9 @@ export class TerminalPane {
     this._intentionalClose = false;
     this._reconnectAttempts = 0;
     this._reconnectTimer = null;
+    this._cmdHistory = [];
+    this._historyIndex = -1;
+    this._historyDraft = '';
   }
 
   /** Create DOM elements and xterm instance */
@@ -164,12 +143,14 @@ export class TerminalPane {
       const btn = _createEl('button', 'qbtn' + (def.cls ? ' ' + def.cls : ''), def.label);
       btn.addEventListener('click', e => {
         e.stopPropagation();
+        console.log('[qbtn]', def.label, 'clicked, ws:', this.ws?.readyState, 'session:', this.sessionId);
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.sessionId) return;
-        if (def.key) {
-          this.ws.send(JSON.stringify({ type: 'key', key: def.key }));
-        } else if (def.send) {
+        if (def.send) {
           this.ws.send(JSON.stringify({ type: 'input', data: def.send }));
+        } else if (def.key) {
+          this.ws.send(JSON.stringify({ type: 'key', key: def.key }));
         }
+        console.log('[qbtn]', def.label, 'sent');
       });
       quickBtns.appendChild(btn);
     }
@@ -182,11 +163,45 @@ export class TerminalPane {
     input.addEventListener('keydown', e => {
       e.stopPropagation();
       if (e.isComposing) return;
+      if (e.key === 'Escape' && this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionId) {
+        this.ws.send(JSON.stringify({ type: 'key', key: 'escape' }));
+        return;
+      }
+      if (e.key === 'Tab' && this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionId) {
+        e.preventDefault();
+        this.ws.send(JSON.stringify({ type: 'key', key: 'tab' }));
+        return;
+      }
       if (e.key === 'Enter' && this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionId) {
         const text = input.value;
         if (text) {
           this.ws.send(JSON.stringify({ type: 'input', data: text + '\r' }));
+          if (text.trim() && (this._cmdHistory.length === 0 || this._cmdHistory[this._cmdHistory.length - 1] !== text)) {
+            this._cmdHistory.push(text);
+          }
+          this._historyIndex = -1;
+          this._historyDraft = '';
           input.value = '';
+        }
+      } else if (e.key === 'ArrowUp') {
+        if (this._cmdHistory.length === 0) return;
+        e.preventDefault();
+        if (this._historyIndex === -1) {
+          this._historyDraft = input.value;
+          this._historyIndex = this._cmdHistory.length - 1;
+        } else if (this._historyIndex > 0) {
+          this._historyIndex--;
+        }
+        input.value = this._cmdHistory[this._historyIndex];
+      } else if (e.key === 'ArrowDown') {
+        if (this._historyIndex === -1) return;
+        e.preventDefault();
+        if (this._historyIndex < this._cmdHistory.length - 1) {
+          this._historyIndex++;
+          input.value = this._cmdHistory[this._historyIndex];
+        } else {
+          this._historyIndex = -1;
+          input.value = this._historyDraft;
         }
       }
     });
@@ -200,7 +215,17 @@ export class TerminalPane {
         input.value = '';
       }
     });
-    inputRow.append(input, sendBtn);
+    const brainstormBtn = _createEl('button', 'brainstorm-btn', 'B');
+    brainstormBtn.title = 'Brainstorming 前缀';
+    brainstormBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const prefix = '/brainstorming ';
+      if (!input.value.startsWith(prefix)) {
+        input.value = prefix + input.value;
+      }
+      input.focus();
+    });
+    inputRow.append(brainstormBtn, input, sendBtn);
     inputBar.append(quickBtns, inputRow);
 
     // AI log sidebar panel
@@ -366,7 +391,9 @@ export class TerminalPane {
     }
     this.disconnect();
     this.sessionId = sessionId || null;
+    this._prevLines = [];
     this._prevStripped = [];
+    this._lastSbHeight = -1;
     this.term.clear();
     if (this.sessionId && this.server) {
       // Apply mode from session list data immediately
@@ -547,6 +574,7 @@ export class TerminalPane {
     this._setStatus('');
     this.ws.onopen = () => {
       this._setStatus('connected');
+      this._setTitle('');
       this._reconnectAttempts = 0;
       this.ws.send(JSON.stringify({ type: 'switch', session_id: this.sessionId }));
       this._pingInterval = setInterval(() => {
@@ -584,7 +612,7 @@ export class TerminalPane {
   _handleMessage(msg) {
     switch (msg.type) {
       case 'output':
-        if (msg.session_id === this.sessionId) this._writeOutput(msg.data);
+        if (msg.session_id === this.sessionId) this._writeOutput(msg.data, msg.scrollback_height, msg.new_scrollback);
         break;
       case 'sessions':
         this._sessions = msg.list;
@@ -654,18 +682,47 @@ export class TerminalPane {
     }
   }
 
-  _writeOutput(data) {
-    const newStripped = data.split('\n').map(stripAnsi);
-    const scrollOffset = detectScrollOffset(this._prevStripped, newStripped);
-    if (scrollOffset === 0 && this._prevStripped.length > 0) return;
-    if (scrollOffset > 0) {
-      this.term.write('\x1b[' + this.term.rows + ';1H' + '\r\n'.repeat(scrollOffset));
+  _writeOutput(data, sbHeight, newScrollback) {
+    const newLines = data.split('\n');
+    const newStripped = newLines.map(stripAnsi);
+    const buf = this.term.buffer.active;
+    const isAtBottom = buf.viewportY >= buf.baseY;
+
+    // Quick check: all lines identical → skip
+    if (this._prevStripped.length === newStripped.length && this._prevStripped.length > 0 && !newScrollback) {
+      let allSame = true;
+      for (let i = 0; i < this._prevStripped.length; i++) {
+        if (this._prevStripped[i] !== newStripped[i]) { allSame = false; break; }
+      }
+      if (allSame) return;
     }
-    // scrollOffset === -1: screen changed completely, don't push anything to scrollback.
-    // Avoids duplicate content from false matches (separator lines, repeated patterns).
+
+    // Push actual scrollback lines from server
+    this._lastSbHeight = sbHeight || 0;
+    if (newScrollback && newScrollback.length > 0) {
+      this.term.write('\x1b[' + this.term.rows + ';1H');
+      for (const line of newScrollback) {
+        this.term.write('\r\n' + line);
+      }
+      // Force full redraw after pushing scrollback
+      this.term.write('\x1b[H\x1b[2J' + data.replace(/\n/g, '\r\n'));
+    } else if (this._prevStripped.length === 0 || this._prevStripped.length !== newStripped.length) {
+      // First frame or line count changed: full redraw
+      this.term.write('\x1b[H\x1b[2J' + data.replace(/\n/g, '\r\n'));
+    } else {
+      // Same line count: diff update, only rewrite changed lines
+      let output = '';
+      for (let i = 0; i < newLines.length; i++) {
+        if (newStripped[i] !== this._prevStripped[i]) {
+          output += `\x1b[${i + 1};1H\x1b[2K${newLines[i]}`;
+        }
+      }
+      if (output) this.term.write(output);
+    }
+
+    this._prevLines = newLines;
     this._prevStripped = newStripped;
-    this.term.write('\x1b[H\x1b[2J' + data.replace(/\n/g, '\r\n'));
-    if (this.term.buffer.active.viewportY >= this.term.buffer.active.baseY) this.term.scrollToBottom();
+    if (isAtBottom) this.term.scrollToBottom();
   }
 
   // --- File upload/download ---
@@ -760,7 +817,15 @@ export class TerminalPane {
     el.textContent = '';
     const ring = _createEl('div', 'countdown-ring', String(msg.remaining));
     const text = _createEl('div', 'countdown-text', actionText);
-    el.append(ring, text);
+    const cancelBtn = _createEl('button', 'countdown-cancel', '取消');
+    cancelBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionId) {
+        this.ws.send(JSON.stringify({ type: 'key', key: 'escape' }));
+      }
+      el.remove();
+    });
+    el.append(ring, text, cancelBtn);
   }
 
   destroy() {
